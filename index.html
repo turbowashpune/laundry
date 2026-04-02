@@ -678,14 +678,20 @@ input[type="number"] {
         <!-- REVENUE SECTION (Admin Only) -->
         <div id="revenueSection" style="display:none;">
           <div class="section-header" style="margin-top:16px;">
-            <h3>💰 Revenue</h3>
+            <h3>💰 Sale & Revenue</h3>
           </div>
           
-          <!-- Revenue Tabs -->
+          <!-- Sale vs Revenue Tabs -->
           <div style="padding:0 16px;">
+            <div style="display:flex;gap:8px;margin-bottom:12px;">
+              <button class="sale-revenue-tab active" onclick="switchSaleRevenueMode('sale',this)" style="flex:1;padding:10px;border-radius:8px;border:2px solid transparent;background:var(--gradient-primary);font-size:13px;font-weight:700;cursor:pointer;color:white;">📊 Sale</button>
+              <button class="sale-revenue-tab" onclick="switchSaleRevenueMode('revenue',this)" style="flex:1;padding:10px;border-radius:8px;border:2px solid var(--border);background:white;font-size:13px;font-weight:700;cursor:pointer;color:var(--text2);">💵 Revenue</button>
+            </div>
+          
+            <!-- Period Tabs -->
             <div class="revenue-tabs" style="display:flex;gap:8px;margin-bottom:12px;overflow-x:auto;padding-bottom:4px;">
               <button class="revenue-tab" onclick="switchRevenueTab('year',this)" style="padding:8px 16px;border-radius:8px;border:2px solid var(--border);background:white;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;color:var(--text2);">Year</button>
-              <button class="revenue-tab active" onclick="switchRevenueTab('month',this)" style="padding:8px 16px;border-radius:8px;border:2px solid var(--orange);background:var(--orange);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;color:white;">Month</button>
+              <button class="revenue-tab active" onclick="switchRevenueTab('month',this)" style="padding:8px 16px;border-radius:8px;border:2px solid transparent;background:var(--gradient-primary);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;color:white;">Month</button>
               <button class="revenue-tab" onclick="switchRevenueTab('week',this)" style="padding:8px 16px;border-radius:8px;border:2px solid var(--border);background:white;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;color:var(--text2);">Week</button>
               <button class="revenue-tab" onclick="switchRevenueTab('daily',this)" style="padding:8px 16px;border-radius:8px;border:2px solid var(--border);background:white;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;color:var(--text2);">Daily</button>
             </div>
@@ -2201,6 +2207,24 @@ function refreshDashboard() {
 // ============================================================
 
 let currentRevenueTab = 'month';
+let currentSaleRevenueMode = 'sale'; // 'sale' or 'revenue'
+
+function switchSaleRevenueMode(mode, el) {
+  currentSaleRevenueMode = mode;
+  
+  // Update tab styling
+  document.querySelectorAll('.sale-revenue-tab').forEach(t => {
+    t.style.border = '2px solid var(--border)';
+    t.style.background = 'white';
+    t.style.color = 'var(--text2)';
+  });
+  el.style.border = '2px solid transparent';
+  el.style.background = 'var(--gradient-primary)';
+  el.style.color = 'white';
+  
+  // Re-render chart with current period
+  renderRevenueChart(currentRevenueTab);
+}
 
 function switchRevenueTab(tab, el) {
   currentRevenueTab = tab;
@@ -2211,8 +2235,8 @@ function switchRevenueTab(tab, el) {
     t.style.background = 'white';
     t.style.color = 'var(--text2)';
   });
-  el.style.border = '2px solid var(--orange)';
-  el.style.background = 'var(--orange)';
+  el.style.border = '2px solid transparent';
+  el.style.background = 'var(--gradient-primary)';
   el.style.color = 'white';
   
   // Render chart
@@ -2222,73 +2246,82 @@ function switchRevenueTab(tab, el) {
 function renderRevenueChart(period) {
   const orders = DB.get('orders') || [];
   
-  // Filter only paid orders (paid_delivered status)
-  const paidOrders = orders.filter(o => o.status === 'paid_delivered');
-  
   let chartData = [];
   
-  if (period === 'year') {
-    chartData = getYearlyRevenue(paidOrders);
-  } else if (period === 'month') {
-    chartData = getMonthlyRevenue(paidOrders);
-  } else if (period === 'week') {
-    chartData = getWeeklyRevenue(paidOrders);
-  } else if (period === 'daily') {
-    chartData = getDailyRevenue(paidOrders);
+  if (currentSaleRevenueMode === 'sale') {
+    // SALE MODE: Use all orders, createdAt date, totalAmount
+    if (period === 'year') {
+      chartData = getYearlySale(orders);
+    } else if (period === 'month') {
+      chartData = getMonthlySale(orders);
+    } else if (period === 'week') {
+      chartData = getWeeklySale(orders);
+    } else if (period === 'daily') {
+      chartData = getDailySale(orders);
+    }
+  } else {
+    // REVENUE MODE: Use paymentHistory, payment date, payment amount
+    if (period === 'year') {
+      chartData = getYearlyRevenue(orders);
+    } else if (period === 'month') {
+      chartData = getMonthlyRevenue(orders);
+    } else if (period === 'week') {
+      chartData = getWeeklyRevenue(orders);
+    } else if (period === 'daily') {
+      chartData = getDailyRevenue(orders);
+    }
   }
   
   // Render bar chart
   renderBarChart(chartData);
 }
 
-function getYearlyRevenue(paidOrders) {
+// ===== SALE FUNCTIONS (Based on Order Creation) =====
+
+function getYearlySale(orders) {
   const currentYear = new Date().getFullYear();
   const data = [];
   
-  // Show last 3 years + current year (or just current if no data)
   for (let year = currentYear - 3; year <= currentYear; year++) {
-    const yearOrders = paidOrders.filter(o => {
+    const yearOrders = orders.filter(o => {
       const orderYear = new Date(o.createdAt).getFullYear();
       return orderYear === year;
     });
     
-    const revenue = yearOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
-    data.push({ label: year.toString(), value: revenue });
+    const sale = yearOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+    data.push({ label: year.toString(), value: sale });
   }
   
   return data;
 }
 
-function getMonthlyRevenue(paidOrders) {
+function getMonthlySale(orders) {
   const currentYear = new Date().getFullYear();
   const data = [];
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   
-  // Show all 12 months of current year
   for (let month = 0; month < 12; month++) {
-    const monthOrders = paidOrders.filter(o => {
+    const monthOrders = orders.filter(o => {
       const orderDate = new Date(o.createdAt);
       return orderDate.getFullYear() === currentYear && orderDate.getMonth() === month;
     });
     
-    const revenue = monthOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
-    data.push({ label: monthNames[month], value: revenue });
+    const sale = monthOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+    data.push({ label: monthNames[month], value: sale });
   }
   
   return data;
 }
 
-function getWeeklyRevenue(paidOrders) {
+function getWeeklySale(orders) {
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth();
   const data = [];
   
-  // Get first and last day of current month
   const firstDay = new Date(currentYear, currentMonth, 1);
   const lastDay = new Date(currentYear, currentMonth + 1, 0);
   
-  // Calculate weeks in current month (max 5 weeks)
   for (let week = 1; week <= 5; week++) {
     const weekStart = new Date(firstDay);
     weekStart.setDate(1 + (week - 1) * 7);
@@ -2296,43 +2329,155 @@ function getWeeklyRevenue(paidOrders) {
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekStart.getDate() + 6);
     
-    // Stop if week starts after month ends
     if (weekStart > lastDay) break;
-    
-    // Adjust weekEnd to not exceed month
     if (weekEnd > lastDay) weekEnd.setTime(lastDay.getTime());
     
-    const weekOrders = paidOrders.filter(o => {
+    const weekOrders = orders.filter(o => {
       const orderDate = new Date(o.createdAt);
       return orderDate >= weekStart && orderDate <= weekEnd;
     });
     
-    const revenue = weekOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+    const sale = weekOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+    data.push({ label: `Week ${week}`, value: sale });
+  }
+  
+  return data;
+}
+
+function getDailySale(orders) {
+  const now = new Date();
+  const data = [];
+  
+  // Show last 7 days
+  for (let i = 6; i >= 0; i--) {
+    const date = new Date(now);
+    date.setDate(date.getDate() - i);
+    const dateStr = date.toDateString();
+    
+    const dayOrders = orders.filter(o => {
+      return new Date(o.createdAt).toDateString() === dateStr;
+    });
+    
+    const sale = dayOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+    const label = i === 0 ? 'Today' : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    data.push({ label, value: sale });
+  }
+  
+  return data;
+}
+
+// ===== REVENUE FUNCTIONS (Based on Payment History) =====
+
+function getYearlyRevenue(orders) {
+  const currentYear = new Date().getFullYear();
+  const data = [];
+  
+  for (let year = currentYear - 3; year <= currentYear; year++) {
+    let revenue = 0;
+    
+    orders.forEach(order => {
+      if (!order.paymentHistory) return;
+      order.paymentHistory.forEach(payment => {
+        const paymentYear = new Date(payment.date).getFullYear();
+        if (paymentYear === year) {
+          revenue += (payment.amount || 0);
+        }
+      });
+    });
+    
+    data.push({ label: year.toString(), value: revenue });
+  }
+  
+  return data;
+}
+
+function getMonthlyRevenue(orders) {
+  const currentYear = new Date().getFullYear();
+  const data = [];
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  
+  for (let month = 0; month < 12; month++) {
+    let revenue = 0;
+    
+    orders.forEach(order => {
+      if (!order.paymentHistory) return;
+      order.paymentHistory.forEach(payment => {
+        const paymentDate = new Date(payment.date);
+        if (paymentDate.getFullYear() === currentYear && paymentDate.getMonth() === month) {
+          revenue += (payment.amount || 0);
+        }
+      });
+    });
+    
+    data.push({ label: monthNames[month], value: revenue });
+  }
+  
+  return data;
+}
+
+function getWeeklyRevenue(orders) {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+  const data = [];
+  
+  const firstDay = new Date(currentYear, currentMonth, 1);
+  const lastDay = new Date(currentYear, currentMonth + 1, 0);
+  
+  for (let week = 1; week <= 5; week++) {
+    const weekStart = new Date(firstDay);
+    weekStart.setDate(1 + (week - 1) * 7);
+    weekStart.setHours(0, 0, 0, 0);
+    
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+    weekEnd.setHours(23, 59, 59, 999);
+    
+    if (weekStart > lastDay) break;
+    if (weekEnd > lastDay) {
+      weekEnd.setTime(lastDay.getTime());
+      weekEnd.setHours(23, 59, 59, 999);
+    }
+    
+    let revenue = 0;
+    orders.forEach(order => {
+      if (!order.paymentHistory) return;
+      order.paymentHistory.forEach(payment => {
+        const paymentDate = new Date(payment.date);
+        if (paymentDate >= weekStart && paymentDate <= weekEnd) {
+          revenue += (payment.amount || 0);
+        }
+      });
+    });
+    
     data.push({ label: `Week ${week}`, value: revenue });
   }
   
   return data;
 }
 
-function getDailyRevenue(paidOrders) {
+function getDailyRevenue(orders) {
+  const now = new Date();
   const data = [];
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
   
-  // Show last 30 days
-  for (let i = 29; i >= 0; i--) {
-    const date = new Date(today);
+  // Show last 7 days
+  for (let i = 6; i >= 0; i--) {
+    const date = new Date(now);
     date.setDate(date.getDate() - i);
+    const dateStr = date.toDateString();
     
-    const dateStr = date.toISOString().split('T')[0];
-    const dayLabel = date.getDate() + ' ' + date.toLocaleDateString('en-US', { month: 'short' });
-    
-    const dayOrders = paidOrders.filter(o => {
-      return o.createdAt && o.createdAt.startsWith(dateStr);
+    let revenue = 0;
+    orders.forEach(order => {
+      if (!order.paymentHistory) return;
+      order.paymentHistory.forEach(payment => {
+        if (new Date(payment.date).toDateString() === dateStr) {
+          revenue += (payment.amount || 0);
+        }
+      });
     });
     
-    const revenue = dayOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
-    data.push({ label: dayLabel, value: revenue });
+    const label = i === 0 ? 'Today' : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    data.push({ label, value: revenue });
   }
   
   return data;
